@@ -367,27 +367,9 @@ class RegexRenamerDialog(gui.GeDialog):
                 Helpers.saveConfig(config)
             self.Close()
         
-        # elif id == IDC_EDIT_SEARCH:
-        #     
-        #     searchregex = self.GetString(IDC_EDIT_SEARCH)
-        #     config = Helpers.readConfig()
-        #     if config is not None:
-        #         config.set("Settings", "search", searchregex)
-        #         Helpers.saveConfig(config)
-        #     if DEBUG:
-        #         print "edit search regex: %r" % msg
-        #         print "searchregex = %s" % searchregex
-        # 
         elif id == IDC_EDIT_REPLACE:
             
             replaceterm = self.GetString(IDC_EDIT_REPLACE)
-            # config = Helpers.readConfig()
-            # if config is not None:
-            #     config.set("Settings", "replace", replaceterm)
-            #     Helpers.saveConfig(config)
-            # if DEBUG:
-            #     print "edit replace term: %r" % msg
-            #     print "replaceterm = %s" % replaceterm
             if len(replaceterm) > 0:
                 self.SetString(IDC_BUTTON_DOIT, "Replace")
             else:
