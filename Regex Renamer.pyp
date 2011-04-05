@@ -6,11 +6,11 @@
 #  Created by Andre Berg on 2011-04-02.
 #  Copyright 2011 Berg Media. All rights reserved.
 #
-#  Version 0.2
-#  Updated: 2011-04-04
+#  Version 1.0
+#  Updated: 2011-04-05
 #
-#  Summary: Search for and rename objects
-#  using Python's power re module
+#  Summary: Search for and select/rename objects
+#  using Python's powerful re module.
 #
 #
 
