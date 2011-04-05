@@ -21,7 +21,7 @@ import c4d
 from c4d import plugins, bitmaps, gui, documents
 from c4d.utils import *
 
-DEBUG = True
+DEBUG = False
 
 if DEBUG:
     import pprint
@@ -59,13 +59,7 @@ containing higher order Unicode characters
 with a preceeding backslash.
 """
 
-IDS_TIPS1 = """If "Use re.match" is checked, the regular
-expression must match the whole object name.
-Otherwise re.search is used, which matches 
-already if partial substrings satisfy the 
-search term. 
-
-I you leave the "Replace with:" field empty, 
+IDS_TIPS1 = """I you leave the "Replace with:" field empty, 
 matching objects will be selected but no 
 replacing will be performed.
 """
@@ -81,11 +75,11 @@ BLACKLIST = ['import os', 'removedirs', 'remove', 'rmdir']
 # Defaults
 DEFAULT_SEARCH_REGEX = "(.*?)\.(\d)"
 DEFAULT_REPLACE_REGEX = "\\2-\\1"
-DEFAULT_USEMATCH = False
 DEFAULT_IGNORECASE = False
 DEFAULT_MULTILINE = False
 DEFAULT_DOTALL = False
 DEFAULT_VERBOSE = False
+DEFAULT_SELECTIONONLY = False
 
 # -------------------------------------------
 #               PLUGING IDS
@@ -96,27 +90,27 @@ ID_REGEXRENAMER = 1026925
 
 
 # Element IDs
-IDD_DIALOG_SETTINGS    = 10001
-IDC_GROUP_WRAPPER      = 10002
-IDC_GROUP_SETTINGS     = 10003
-IDC_STATIC_SEARCH      = 10004
-IDC_EDIT_SEARCH        = 10005
-IDC_STATIC_REPLACE     = 10006
-IDC_EDIT_REPLACE       = 10007
-IDC_GROUP_SETTINGS2    = 10008
-IDC_CHECK_IGNORECASE   = 10009
-IDC_CHECK_MULTILINE    = 10010
-IDC_CHECK_DOTALL       = 10011
-IDC_CHECK_VERBOSE      = 10012
-IDC_CHECK_USEMATCH     = 10013
-IDC_GROUP_BUTTONS      = 10014
-IDC_BUTTON_CANCEL      = 10015
-IDC_BUTTON_DOIT        = 10016
-IDC_DUMMY              = 10017
-IDC_MENU_ABOUT         = 30001
-IDC_MENU_TUTORIAL      = 30002
-IDC_MENU_HINT_NONASCII = 30003
-IDC_MENU_TIPS          = 30004
+IDD_DIALOG_SETTINGS     = 10001
+IDC_GROUP_WRAPPER       = 10002
+IDC_GROUP_SETTINGS      = 10003
+IDC_STATIC_SEARCH       = 10004
+IDC_EDIT_SEARCH         = 10005
+IDC_STATIC_REPLACE      = 10006
+IDC_EDIT_REPLACE        = 10007
+IDC_CHECK_IGNORECASE    = 10008
+IDC_CHECK_MULTILINE     = 10009
+IDC_CHECK_DOTALL        = 10010
+IDC_CHECK_VERBOSE       = 10011
+IDC_GROUP_SETTINGS2     = 10012
+IDC_CHECK_SELECTIONONLY = 10013
+IDC_GROUP_BUTTONS       = 10014
+IDC_BUTTON_CANCEL       = 10015
+IDC_BUTTON_DOIT         = 10016
+IDC_DUMMY               = 10017
+IDC_MENU_ABOUT          = 30001
+IDC_MENU_TUTORIAL       = 30002
+IDC_MENU_HINT_NONASCII  = 30003
+IDC_MENU_TIPS           = 30004
 
 # String IDs
 IDS_DIALOG_TITLE         = PLUGIN_NAME
@@ -142,7 +136,7 @@ class Helpers(object):
         """
         result = None
         if filepath is None:
-            filepath = os.path.join(os.path.dirname(os.path.abspath(__file__)), "res/", "config.ini")
+            filepath = os.path.join(os.path.dirname(os.path.abspath(__file__)), "res", "config.ini")
         if os.path.exists(filepath):
             config = ConfigParser.ConfigParser()
             config.read(filepath)
@@ -159,13 +153,13 @@ class Helpers(object):
         """
         result = False
         if filepath is None:
-            filepath = os.path.join(os.path.dirname(os.path.abspath(__file__)), "res/", "config.ini")
+            filepath = os.path.join(os.path.dirname(os.path.abspath(__file__)), "res", "config.ini")
         try:
             with open(filepath, 'wb') as configfile:
                 config.write(configfile)
             result = True
         except Exception, e:
-            print "*** Caught Exception: %r ***" % e
+            print "Error writing config file to '%s': %r" % (filepath, e)
         return result
     
     @staticmethod
@@ -178,7 +172,7 @@ class Helpers(object):
         """
         result = False
         if filepath is None:
-            filepath = os.path.join(os.path.dirname(os.path.abspath(__file__)), "res/", "config.ini")
+            filepath = os.path.join(os.path.dirname(os.path.abspath(__file__)), "res", "config.ini")
         if not os.path.exists(filepath):
             config = ConfigParser.ConfigParser(defaults)
             result = Helpers.saveConfig(config, filepath)
@@ -189,25 +183,6 @@ class Helpers(object):
         if not op.GetBit(c4d.BIT_ACTIVE):
             op.ToggleBit(c4d.BIT_ACTIVE)
         return op.GetBit(c4d.BIT_ACTIVE)
-    
-    @staticmethod
-    def selectAdd(op):
-        """
-        Same as select(op) but uses a slightly different mechanism.
-        
-        See also BaseDocument.SetSelection(sel, mode).
-        """
-        doc = op.GetDocument()
-        doc.SetActiveObject(op, c4d.SELECTION_ADD)
-    
-    @staticmethod
-    def selectGroupMembers(grp):
-        doc = documents.GetActiveDocument()
-        for obj in grp:
-            # add each group member to the selection
-            # so we can group them in the object manager
-            #doc.AddUndo(UNDO_BITS, obj)
-            doc.SetActiveObject(obj, c4d.SELECTION_ADD)
     
     @staticmethod
     def selectObjects(objs):
@@ -228,105 +203,19 @@ class Helpers(object):
             c4d.CallCommand(12113) # deselect all
     
     @staticmethod
-    def recurseBranch(obj):
-        child = obj.GetDown()
-        while child:
-            child = child.GetNext()
-            return Helpers.recurseBranch(child)
-    
-    @staticmethod
     def getNextObject(op, stopobj=None):
-        if op == None: return None
+        if op is None: return None
         if op.GetDown(): return op.GetDown()
         if stopobj is None:
             while not op.GetNext() and op.GetUp():
                     op = op.GetUp()
         else:
-            while (not op.GetNext() and
-                       op.GetUp() and
+            while (not op.GetNext() and 
+                       op.GetUp() and 
                        op.GetUp() != stopobj):
                 op = op.GetUp()
         return op.GetNext()
     
-    @staticmethod
-    def getActiveObjects(doc):
-        """
-        Same as BaseDocument.GetSelection(), where GetSelection also selects tags and materials.
-        """
-        lst = list()
-        op = doc.GetFirstObject()
-        while op:
-            if op.GetBit(c4d.BIT_ACTIVE) == True:
-                lst.append(op)
-            op = Helpers.getNextObject(op)
-        return lst
-    
-    @staticmethod
-    def findObject(name):
-        """Find object with name 'name'"""
-        if name is None: return None
-        if not isinstance(name, basestring):
-            raise TypeError("Expected string, got %s" % type(name))
-        doc = documents.GetActiveDocument()
-        if not doc: return None
-        result = None
-        op = doc.GetFirstObject()
-        curname = op.GetName()
-        if curname == name: return op
-        op = Helpers.getNextObject(op)
-        while op:
-            curname = op.GetName()
-            if curname == name:
-                return op
-            else:
-                op = Helpers.getNextObject(op)
-        return result
-    
-    @staticmethod
-    def createObject(typ, name, undo=True):
-        obj = None
-        try:
-            doc = documents.GetActiveDocument()
-            if doc is None: return None
-            obj = c4d.BaseObject(typ)
-            obj.SetName(name)
-            c4d.StopAllThreads()
-            doc.InsertObject(obj)
-            if undo is True:
-                doc.AddUndo(c4d.UNDOTYPE_NEW, obj)
-            c4d.EventAdd()
-        except Exception, e:
-            print "*** Caught Exception: %r ***" % e
-        return obj
-    
-    @staticmethod
-    def insertUnderNull(objs, grp=None, name="Group", copy=False):
-        """
-        Inserts objects under a group (null) object, optionally creating the group.
-        
-        objs  BaseObject      can be a single object or a list of objects
-        grp   BaseObject      the group to place the objects under
-                              (if None a new null object will be created)
-        name  str             name for the new group
-        copy  bool            copy the objects if True
-        
-        Returns the modyfied/created group on success, None on failure.
-        """
-        if grp is None:
-            grp = Helpers.createObject(c4d.Onull, name)
-        if copy == True:
-            objs = [i.GetClone() for i in objs]
-        if DEBUG: print "inserting objs into group '%s'" % grp.GetName()
-        if isinstance(objs, list):
-            for obj in objs:
-                obj.Remove()
-                obj.InsertUnder(grp)
-        else:
-            objs.Remove()
-            objs.InsertUnder(grp)
-        c4d.EventAdd()
-        return grp
-
 
 # ------------------------------------------------------
 #                   User Interface
@@ -356,84 +245,88 @@ class RegexRenamerDialog(gui.GeDialog):
         config = Helpers.readConfig()
         if config is not None:
             searchregex = config.get("Settings", "search")
-            replaceregex = config.get("Settings", "replace")
-            usematch = config.getboolean("Settings", "usematch")
+            replaceterm = config.get("Settings", "replace")
             ignorecase = config.getboolean("Settings", "ignorecase")
             multiline = config.getboolean("Settings", "multiline")
             verbose = config.getboolean("Settings", "verbose")
+            selectiononly = config.getboolean("Settings", "selectiononly")
             dotall = config.getboolean("Settings", "dotall")
             if DEBUG:
                 print "stored search regex = %s" % searchregex
-                print "stored replace regex = %s" % replaceregex
-                print "stored use match = %s" % usematch
+                print "stored replace term = %s" % replaceterm
                 print "stored ignorecase = %s" % ignorecase
                 print "stored multiline = %s" % multiline
                 print "stored verbose = %s" % verbose
                 print "stored dot all = %s" % dotall
+                print "stored selection only = %s" % selectiononly
         else:
             searchregex = DEFAULT_SEARCH_REGEX
-            replaceregex = DEFAULT_REPLACE_REGEX
-            usematch = DEFAULT_USEMATCH
+            replaceterm = DEFAULT_REPLACE_REGEX
             ignorecase = DEFAULT_IGNORECASE
             multiline = DEFAULT_MULTILINE
             verbose = DEFAULT_VERBOSE
             dotall = DEFAULT_DOTALL
+            selectiononly = DEFAULT_SELECTIONONLY
             # if the config file isn't there, create it
             config = ConfigParser.ConfigParser()
             config.add_section("Settings")
             config.set("Settings", "search", searchregex)
-            config.set("Settings", "replace", replaceregex)
-            config.set("Settings", "usematch", usematch)
+            config.set("Settings", "replace", replaceterm)
             config.set("Settings", "ignorecase", ignorecase)
             config.set("Settings", "multiline", multiline)
             config.set("Settings", "verbose", verbose)
             config.set("Settings", "dotall", dotall)
+            config.set("Settings", "selectiononly", selectiononly)
             Helpers.saveConfig(config)
         self.SetString(IDC_EDIT_SEARCH, searchregex)
-        self.SetString(IDC_EDIT_REPLACE, replaceregex)
-        self.SetBool(IDC_CHECK_USEMATCH, usematch)
+        self.SetString(IDC_EDIT_REPLACE, replaceterm)
         self.SetBool(IDC_CHECK_IGNORECASE, ignorecase)
         self.SetBool(IDC_CHECK_MULTILINE, multiline)
         self.SetBool(IDC_CHECK_VERBOSE, verbose)
         self.SetBool(IDC_CHECK_DOTALL, dotall)
+        self.SetBool(IDC_CHECK_SELECTIONONLY, selectiononly)
+        if len(replaceterm) > 0:
+            self.SetString(IDC_BUTTON_DOIT, "Replace")
+        else:
+            self.SetString(IDC_BUTTON_DOIT, "Select")
         return True
     
     def Command(self, id, msg):
         
         cursearchregex = self.GetString(IDC_EDIT_SEARCH)
-        curreplaceregex = self.GetString(IDC_EDIT_REPLACE)
-        usematch = self.GetBool(IDC_CHECK_USEMATCH)
+        curreplaceterm = self.GetString(IDC_EDIT_REPLACE)
         multiline = self.GetBool(IDC_CHECK_MULTILINE)
         ignorecase = self.GetBool(IDC_CHECK_IGNORECASE)
         dotall = self.GetBool(IDC_CHECK_DOTALL)
         verbose = self.GetBool(IDC_CHECK_VERBOSE)
+        selectiononly = self.GetBool(IDC_CHECK_SELECTIONONLY)
         
         if id == IDC_BUTTON_DOIT:
             
             # sanitize input
             for s in BLACKLIST:
-                if s in cursearchregex or s in curreplaceregex:
+                if s in cursearchregex or s in curreplaceterm:
                     c4d.gui.MessageDialog(IDS_SETTINGS_PARSE_ERROR_BLACKLISTED)
                     return False
             try:
-                evalsearchregex = eval("ur'%s'" % cursearchregex)
+                evalsearchregex = eval("ur\"\"\"%s\"\"\"" % cursearchregex)
             except Exception, e:
                 c4d.gui.MessageDialog(IDS_SETTINGS_PARSE_ERROR_SEARCHREGEX_UNKNOWN % e)
                 return False
             try:
-                evalreplaceregex = eval("ur'%s'" % curreplaceregex)
+                evalreplaceterm = eval("ur\"\"\"%s\"\"\"" % curreplaceterm)
             except Exception, e:
                 c4d.gui.MessageDialog(IDS_SETTINGS_PARSE_ERROR_REPLACEREGEX_UNKNOWN % e)
                 return False
             
             scriptvars = {
                 'search': evalsearchregex,
-                'replace': evalreplaceregex,
-                'usematch': usematch,
+                'replace': evalreplaceterm,
                 'multiline': multiline,
                 'ignorecase': ignorecase,
                 'dotall': dotall,
-                'verbose': verbose
+                'verbose': verbose,
+                'selectiononly': selectiononly
             }
             script = RegexRenamerScript(scriptvars)
             if DEBUG:
@@ -446,54 +339,59 @@ class RegexRenamerDialog(gui.GeDialog):
         elif id == IDC_BUTTON_CANCEL:
             
             searchregex = self.GetString(IDC_EDIT_SEARCH)
-            replaceregex = self.GetString(IDC_EDIT_REPLACE)
-            usematch = self.GetBool(IDC_CHECK_USEMATCH)
+            replaceterm = self.GetString(IDC_EDIT_REPLACE)
             multiline = self.GetBool(IDC_CHECK_MULTILINE)
             ignorecase = self.GetBool(IDC_CHECK_IGNORECASE)
             dotall = self.GetBool(IDC_CHECK_DOTALL)
             verbose = self.GetBool(IDC_CHECK_VERBOSE)
+            selectiononly = self.GetBool(IDC_CHECK_SELECTIONONLY)
+            
             if DEBUG:
                 print "cancel: %r" % msg
                 print "search: %r" % searchregex
-                print "replace: %r" % replaceregex
-                print "usematch: %r" % usematch
+                print "replace: %r" % replaceterm
                 print "ignorecase: %s" % ignorecase
                 print "multiline: %s" % multiline
                 print "verbose: %s" % verbose
                 print "dot all: %s" % dotall
+                print "selection only: %s" % selectiononly
             config = Helpers.readConfig()
             if config is not None:
                 config.set("Settings", "search", searchregex)
-                config.set("Settings", "replace", replaceregex)
-                config.set("Settings", "usematch", usematch)
+                config.set("Settings", "replace", replaceterm)
                 config.set("Settings", "ignorecase", ignorecase)
                 config.set("Settings", "multiline", multiline)
                 config.set("Settings", "verbose", verbose)
                 config.set("Settings", "dotall", dotall)
+                config.set("Settings", "selectiononly", selectiononly)
                 Helpers.saveConfig(config)
             self.Close()
         
-        elif id == IDC_EDIT_SEARCH:
-            
-            searchregex = self.GetString(IDC_EDIT_SEARCH)
-            config = Helpers.readConfig()
-            if config is not None:
-                config.set("Settings", "search", searchregex)
-                Helpers.saveConfig(config)
-            if DEBUG:
-                print "edit search regex: %r" % msg
-                print "searchregex = %s" % searchregex
-        
+        # elif id == IDC_EDIT_SEARCH:
+        #     
+        #     searchregex = self.GetString(IDC_EDIT_SEARCH)
+        #     config = Helpers.readConfig()
+        #     if config is not None:
+        #         config.set("Settings", "search", searchregex)
+        #         Helpers.saveConfig(config)
+        #     if DEBUG:
+        #         print "edit search regex: %r" % msg
+        #         print "searchregex = %s" % searchregex
+        # 
         elif id == IDC_EDIT_REPLACE:
             
-            replaceregex = self.GetString(IDC_EDIT_REPLACE)
-            config = Helpers.readConfig()
-            if config is not None:
-                config.set("Settings", "replace", replaceregex)
-                Helpers.saveConfig(config)
-            if DEBUG:
-                print "edit replace regex: %r" % msg
-                print "replaceregex = %s" % replaceregex
+            replaceterm = self.GetString(IDC_EDIT_REPLACE)
+            # config = Helpers.readConfig()
+            # if config is not None:
+            #     config.set("Settings", "replace", replaceterm)
+            #     Helpers.saveConfig(config)
+            # if DEBUG:
+            #     print "edit replace term: %r" % msg
+            #     print "replaceterm = %s" % replaceterm
+            if len(replaceterm) > 0:
+                self.SetString(IDC_BUTTON_DOIT, "Replace")
+            else:
+                self.SetString(IDC_BUTTON_DOIT, "Select")
                     
         elif id == IDC_MENU_ABOUT:
             
@@ -532,21 +430,17 @@ class RegexRenamerScript(object):
     
     def run(self):
         doc = documents.GetActiveDocument()
+        if doc is None: return False
+        
         doc.StartUndo()
-        
-        sel = doc.GetSelection()
-        if sel is None: return False
-                
-        # very important!
-        c4d.StopAllThreads()
-        
+                        
         searchregex = self.data['search']
-        replaceregex = self.data['replace']
-        usematch = self.data['usematch']
+        replaceterm = self.data['replace']
         ignorecase = self.data['ignorecase']
         multiline = self.data['multiline']
         verbose = self.data['verbose']
         dotall = self.data['dotall']
+        selectiononly = self.data['selectiononly']
         
         flags = re.UNICODE
         if ignorecase is True:
@@ -564,29 +458,42 @@ class RegexRenamerScript(object):
             c4d.gui.MessageDialog(IDS_SETTINGS_COMPILE_ERROR_SEARCHREGEX % e)
             return False
                 
-        Helpers.deselectAll(True)
-        
-        firstobj = doc.GetFirstObject()
-        
+        # very important!
+        c4d.StopAllThreads()
+                
         c4d.StatusSetSpin()
         timestart = c4d.GeGetMilliSeconds()
         
-        op = firstobj
-        while op:
-            curname = op.GetName()
-            if usematch:
-                func = re.match
-            else:
-                func = re.search
-            if func(pat, curname):
-                doc.AddUndo(c4d.UNDOTYPE_CHANGE, op)
-                Helpers.select(op)
-                if len(replaceregex) > 0:
-                    newname = re.sub(pat, replaceregex, curname)
-                    op.SetName(newname)
-                    op.Message(c4d.MSG_UPDATE)
-                    c4d.EventAdd()
-            op = Helpers.getNextObject(op)
+        if selectiononly:
+            sel = doc.GetSelection()
+            if sel is None or len(sel) == 0: return False
+            Helpers.deselectAll(True)
+            for op in sel:
+                curname = op.GetName()
+                if DEBUG: print "processing %r (%r)" % (curname, op)
+                if re.search(pat, curname):
+                    doc.AddUndo(c4d.UNDOTYPE_CHANGE, op)
+                    Helpers.select(op)
+                    if len(replaceterm) > 0:
+                        newname = re.sub(pat, replaceterm, curname)
+                        op.SetName(newname)
+                        op.Message(c4d.MSG_UPDATE)
+                        c4d.EventAdd()
+        else:
+            Helpers.deselectAll(True)
+            op = doc.GetFirstObject()
+            while op:
+                curname = op.GetName()
+                if DEBUG: print "processing %r (%r)" % (curname, op)
+                if re.search(pat, curname):
+                    doc.AddUndo(c4d.UNDOTYPE_CHANGE, op)
+                    Helpers.select(op)
+                    if len(replaceterm) > 0:
+                        newname = re.sub(pat, replaceterm, curname)
+                        op.SetName(newname)
+                        op.Message(c4d.MSG_UPDATE)
+                        c4d.EventAdd()
+                op = Helpers.getNextObject(op)
         
         c4d.StatusClear()
         
@@ -599,7 +506,7 @@ class RegexRenamerScript(object):
         print timemsg
         
         return True
-
+    
 
 # ----------------------------------------------------
 #                      Main
@@ -610,14 +517,14 @@ class RegexRenamerMain(plugins.CommandData):
         # create the dialog
         if self.dialog is None:
             self.dialog = RegexRenamerDialog()
-        return self.dialog.Open(c4d.DLG_TYPE_ASYNC, pluginid=ID_REGEXRENAMER, defaultw=315, defaulth=200)
+        return self.dialog.Open(c4d.DLG_TYPE_ASYNC, pluginid=ID_REGEXRENAMER, defaultw=355, defaulth=200)
     
     def RestoreLayout(self, secref):
         # manage nonmodal dialog
         if self.dialog is None:
             self.dialog = RegexRenamerDialog()
         return self.dialog.Restore(pluginid=ID_REGEXRENAMER, secret=secref)
-
+    
 
 
 if __name__ == "__main__":
