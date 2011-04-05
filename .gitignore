@@ -26,3 +26,7 @@ desktop.ini
 # Python Stuff
 
 *.pyc
+
+# Plugin Stuff
+
+config.ini
