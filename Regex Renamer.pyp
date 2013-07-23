@@ -4,10 +4,10 @@
 #  CINEMA 4D Python Plugins
 #
 #  Created by Andre Berg on 2011-04-02.
-#  Copyright 2011 Berg Media. All rights reserved.
+#  Copyright 2013 Berg Media. All rights reserved.
 #
 #  Version 1.0
-#  Updated: 2011-04-05
+#  Updated: 2013-07-23
 #
 #  Summary: Search for and select/rename objects
 #  using Python's powerful re module.
@@ -16,6 +16,7 @@
 
 import os
 import re
+import time
 import ConfigParser
 import c4d
 from c4d import plugins, bitmaps, gui, documents
@@ -29,6 +30,7 @@ if DEBUG:
     PP = pp.pprint
     PF = pp.pformat
 
+CR_YEAR = time.strftime("%Y")
 
 # -------------------------------------------
 #                GLOBALS
@@ -37,8 +39,10 @@ if DEBUG:
 PLUGIN_NAME    = "Regex Renamer"
 PLUGIN_VERSION = 1.0
 PLUGIN_HELP    = "Find & Replace object names using Python's powerful re module"
-PLUGIN_ABOUT   = """(C) 2011 Andre Berg (Berg Media)
+PLUGIN_ABOUT   = """(C) %s Andre Berg (Berg Media)
 All rights reserved.
+
+Version %s 
 
 Regex Renamer is a command plugin, that
 allows for utilizing Python's powerful "re"
@@ -49,19 +53,20 @@ Use at your own risk!
 
 It is recommended to try out the plugin
 on a spare copy of your data first.
+""" % (CR_YEAR, PLUGIN_VERSION)
+
+IDS_HINT_NONASCII = """There is a special treatment for non-ASCII characters 
+like for example German umlauts. CINEMA 4D internally 
+they are stored as a \\uXXXX escape sequence and thus 
+need to be converted to and from this form. Before this
+was done automatically by the plugin you had to 
+prepend a single backslash to the higher order ASCII 
+character.
 """
 
-IDS_HINT_NONASCII = """When searching, non-ASCII characters like 
-for example German umlauts, need to be escaped 
-with a single backslash. It seems that for 
-Python CINEMA 4D's object manager stores names 
-containing higher order Unicode characters 
-with a preceeding backslash.
-"""
-
-IDS_TIPS1 = """I you leave the "Replace with:" field empty, 
+IDS_TIPS1 = """If you leave the "Replace with:" field empty, 
 matching objects will be selected but no 
-replacing will be performed.
+name replacement will be performed.
 """
 
 IDS_SETTINGS_PARSE_ERROR_SEARCHREGEX_UNKNOWN = "Parsing 'Search for' failed. The error message was: %s"
@@ -80,6 +85,7 @@ DEFAULT_MULTILINE = False
 DEFAULT_DOTALL = False
 DEFAULT_VERBOSE = False
 DEFAULT_SELECTIONONLY = False
+
 
 # -------------------------------------------
 #               PLUGING IDS
@@ -216,6 +222,20 @@ class Helpers(object):
                 op = op.GetUp()
         return op.GetNext()
     
+    @staticmethod
+    def escapeNonAsciiChars(s):
+        result = ""
+        for b in s:
+            if ord(b) > 126:
+                result += "\\\u%04X" % (ord(b),)
+            else:
+                result += b
+        return result
+
+    @staticmethod
+    def unescapeNonAsciiChars(s):
+        return s.decode('unicode_escape')
+    
 
 # ------------------------------------------------------
 #                   User Interface
@@ -307,14 +327,22 @@ class RegexRenamerDialog(gui.GeDialog):
             for s in BLACKLIST:
                 if s in cursearchregex or s in curreplaceterm:
                     c4d.gui.MessageDialog(IDS_SETTINGS_PARSE_ERROR_BLACKLISTED)
-                    return False
+                    return False            
             try:
                 evalsearchregex = eval("ur\"\"\"%s\"\"\"" % cursearchregex)
+                # This is needed because CINEMA 4D's Python <-> Coffee/C++ interface
+                # seems to store higher order chars as a \uXXXX escape and then Py4D
+                # seems to do an additional backslash escape so it becomes \\\uXXXX.
+                # eval though makes \\\uXXXX into \xXX so we need to convert it back
+                # so it compares positively to the object names accessable via the
+                # object manager.
+                evalsearchregex = Helpers.escapeNonAsciiChars(evalsearchregex)
             except Exception, e:
                 c4d.gui.MessageDialog(IDS_SETTINGS_PARSE_ERROR_SEARCHREGEX_UNKNOWN % e)
                 return False
             try:
                 evalreplaceterm = eval("ur\"\"\"%s\"\"\"" % curreplaceterm)
+                evalreplaceterm = Helpers.escapeNonAsciiChars(evalreplaceterm)
             except Exception, e:
                 c4d.gui.MessageDialog(IDS_SETTINGS_PARSE_ERROR_REPLACEREGEX_UNKNOWN % e)
                 return False
@@ -521,7 +549,7 @@ if __name__ == "__main__":
         PLUGIN_HELP,
         RegexRenamerMain()
     )
-    print "%s v%.1f loaded. (C) 2011 Andre Berg" % (PLUGIN_NAME, PLUGIN_VERSION)
+    print "%s v%.1f loaded. (C) %s Andre Berg" % (PLUGIN_NAME, PLUGIN_VERSION, CR_YEAR)
 
 
 # Licensed under the Apache License, Version 2.0 (the "License");
